@@ -76,6 +76,15 @@ const DEFAULT_CODEX_BACKEND: CliBackendConfig = {
   serialize: true,
 };
 
+const DEFAULT_CLINE_BACKEND: CliBackendConfig = {
+  command: "cline",
+  args: ["--json", "--yolo", "--act"],
+  output: "jsonl",
+  input: "arg",
+  sessionMode: "none",
+  serialize: true,
+};
+
 function normalizeBackendKey(key: string): string {
   return normalizeProviderId(key);
 }
@@ -113,6 +122,7 @@ export function resolveCliBackendIds(cfg?: OpenClawConfig): Set<string> {
   const ids = new Set<string>([
     normalizeBackendKey("claude-cli"),
     normalizeBackendKey("codex-cli"),
+    normalizeBackendKey("cline-cli"),
   ]);
   const configured = cfg?.agents?.defaults?.cliBackends ?? {};
   for (const key of Object.keys(configured)) {
@@ -139,6 +149,15 @@ export function resolveCliBackendConfig(
   }
   if (normalized === "codex-cli") {
     const merged = mergeBackendConfig(DEFAULT_CODEX_BACKEND, override);
+    const command = merged.command?.trim();
+    if (!command) {
+      return null;
+    }
+    return { id: normalized, config: { ...merged, command } };
+  }
+
+  if (normalized === "cline-cli") {
+    const merged = mergeBackendConfig(DEFAULT_CLINE_BACKEND, override);
     const command = merged.command?.trim();
     if (!command) {
       return null;

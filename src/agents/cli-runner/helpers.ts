@@ -285,6 +285,134 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
+function pickPositiveNumber(raw: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "number" && value > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function toClineUsage(raw: Record<string, unknown>): CliUsage | undefined {
+  const input = pickPositiveNumber(raw, ["inputTokens", "input_tokens", "tokensIn"]);
+  const output = pickPositiveNumber(raw, ["outputTokens", "output_tokens", "tokensOut"]);
+  const cacheRead = pickPositiveNumber(raw, [
+    "cacheReadTokens",
+    "cacheRead",
+    "cacheReads",
+    "cached_input_tokens",
+  ]);
+  const cacheWrite = pickPositiveNumber(raw, [
+    "cacheWriteTokens",
+    "cacheWrite",
+    "cacheWrites",
+    "cache_write_input_tokens",
+  ]);
+  const total =
+    pickPositiveNumber(raw, ["totalTokens", "total_tokens", "total"]) ??
+    (input || output || cacheRead || cacheWrite
+      ? (input ?? 0) + (output ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0)
+      : undefined);
+  if (!input && !output && !cacheRead && !cacheWrite && !total) {
+    return undefined;
+  }
+  return { input, output, cacheRead, cacheWrite, total };
+}
+
+function parseClineJsonlLines(lines: string[], backend: CliBackendConfig): CliOutput | null {
+  let sawClineEvent = false;
+  let sessionId: string | undefined;
+  let usage: CliUsage | undefined;
+  let runResultText: string | undefined;
+  let completionText: string | undefined;
+  let agentText = "";
+  let sayText = "";
+
+  for (const line of lines) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isRecord(parsed)) {
+      continue;
+    }
+
+    const type = typeof parsed.type === "string" ? parsed.type : "";
+    if (
+      type !== "task_started" &&
+      type !== "say" &&
+      type !== "agent_event" &&
+      type !== "run_result" &&
+      type !== "error"
+    ) {
+      continue;
+    }
+    sawClineEvent = true;
+
+    if (!sessionId) {
+      sessionId = pickSessionId(parsed, backend);
+    }
+    if (!sessionId && typeof parsed.taskId === "string") {
+      sessionId = parsed.taskId.trim();
+    }
+
+    if (isRecord(parsed.usage)) {
+      usage = toClineUsage(parsed.usage) ?? toUsage(parsed.usage) ?? usage;
+    }
+    if (isRecord(parsed.aggregateUsage)) {
+      usage = toClineUsage(parsed.aggregateUsage) ?? usage;
+    }
+
+    if (type === "run_result") {
+      if (typeof parsed.text === "string") {
+        runResultText = parsed.text;
+      }
+      continue;
+    }
+
+    if (type === "say") {
+      const say = typeof parsed.say === "string" ? parsed.say : "";
+      if (say === "completion_result" && typeof parsed.text === "string") {
+        completionText = parsed.text;
+      } else if (say === "text" && parsed.partial !== true && typeof parsed.text === "string") {
+        sayText += parsed.text;
+      }
+      continue;
+    }
+
+    if (type === "agent_event" && isRecord(parsed.event)) {
+      const body = parsed.event;
+      const bodyType = typeof body.type === "string" ? body.type : "";
+      if (isRecord(body.usage)) {
+        usage = toClineUsage(body.usage) ?? toUsage(body.usage) ?? usage;
+      }
+      if (typeof body.text === "string") {
+        if (bodyType === "content_end") {
+          agentText = body.text;
+        } else if (
+          bodyType === "content_start" ||
+          bodyType === "content_delta" ||
+          bodyType === "text_delta"
+        ) {
+          agentText += body.text;
+        } else if (bodyType === "done") {
+          runResultText = body.text;
+        }
+      }
+    }
+  }
+
+  const text = (runResultText ?? completionText ?? (agentText || sayText)).trim();
+  if (!sawClineEvent || !text) {
+    return null;
+  }
+  return { text, sessionId, usage };
+}
+
 function collectText(value: unknown): string {
   if (!value) {
     return "";
@@ -363,6 +491,10 @@ export function parseCliJsonl(raw: string, backend: CliBackendConfig): CliOutput
     .filter(Boolean);
   if (lines.length === 0) {
     return null;
+  }
+  const clineOutput = parseClineJsonlLines(lines, backend);
+  if (clineOutput) {
+    return clineOutput;
   }
   let sessionId: string | undefined;
   let usage: CliUsage | undefined;

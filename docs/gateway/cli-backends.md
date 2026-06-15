@@ -34,6 +34,15 @@ Codex CLI also works out of the box:
 openclaw agent --message "hi" --model codex-cli/gpt-5.3-codex
 ```
 
+Cline CLI also works through the subprocess JSONL path:
+
+```bash
+openclaw agent --message "hi" --model cline-cli/default
+```
+
+`cline-cli/default` calls the locally installed `cline --json --yolo --act`
+command and lets cline use its own configured model/provider.
+
 If your gateway runs under launchd/systemd and PATH is minimal, add just the
 command path:
 
