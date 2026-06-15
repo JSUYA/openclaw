@@ -5,7 +5,9 @@
 This fork can use your already configured `cline` CLI as the local LLM provider.
 Select `cline-cli/default` in `~/.openclaw/openclaw.json`; OpenClaw will call
 `cline --json --yolo --act <prompt>` and let Cline use its own configured
-provider/model. ACP is not required.
+provider/model. ACP is not required. `cline-cli/default` is not an OpenClaw auth
+provider entry, so do not look for `cline` in `openclaw models auth` provider
+flows.
 
 ```json
 {
@@ -22,7 +24,7 @@ provider/model. ACP is not required.
 ```
 
 ```bash
-openclaw agent --local --session-id cline-smoke --message "Reply exactly: OK."
+openclaw agent --local --session-id cline-smoke --model cline-cli/default --message "Reply exactly: OK."
 ```
 
 <p align="center">

@@ -38,14 +38,18 @@ registers a default backend):
 openclaw agent --message "hi" --model claude-cli/claude-sonnet-4-6
 ```
 
-Cline CLI also works through the subprocess JSONL path:
+Cline CLI also works through the subprocess JSONL path. For a direct local
+smoke test, use `--local`; without it, the command goes through the Gateway and
+requires Gateway auth:
 
 ```bash
-openclaw agent --message "hi" --model cline-cli/default
+openclaw agent --local --message "hi" --model cline-cli/default
 ```
 
 `cline-cli/default` calls the locally installed `cline --json --yolo --act`
-command and lets cline use its own configured model/provider.
+command and lets cline use its own configured model/provider. It is a CLI
+backend model id, not an OpenClaw model auth provider, so it does not appear in
+`openclaw models auth` provider flows.
 
 If your gateway runs under launchd/systemd and PATH is minimal, add just the
 command path:
