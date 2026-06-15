@@ -38,6 +38,15 @@ registers a default backend):
 openclaw agent --message "hi" --model claude-cli/claude-sonnet-4-6
 ```
 
+Cline CLI also works through the subprocess JSONL path:
+
+```bash
+openclaw agent --message "hi" --model cline-cli/default
+```
+
+`cline-cli/default` calls the locally installed `cline --json --yolo --act`
+command and lets cline use its own configured model/provider.
+
 If your gateway runs under launchd/systemd and PATH is minimal, add just the
 command path:
 

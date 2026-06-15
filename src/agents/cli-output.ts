@@ -809,11 +809,157 @@ export function createCliJsonlStreamingParser(params: {
 
 /** Parses complete JSONL CLI output into the final assistant result and metadata. */
 /** Parses complete JSONL output from a CLI backend into normalized text and metadata. */
+function pickClinePositiveNumber(raw: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = raw[key];
+    if (typeof value === "number" && value > 0) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function readClineUsage(raw: Record<string, unknown>): CliUsage | undefined {
+  const existing = readCliUsage(raw);
+  if (existing) {
+    return existing;
+  }
+
+  const input = pickClinePositiveNumber(raw, ["inputTokens", "input_tokens", "tokensIn"]);
+  const output = pickClinePositiveNumber(raw, ["outputTokens", "output_tokens", "tokensOut"]);
+  const cacheRead = pickClinePositiveNumber(raw, [
+    "cacheReadTokens",
+    "cacheRead",
+    "cacheReads",
+    "cached_input_tokens",
+  ]);
+  const cacheWrite = pickClinePositiveNumber(raw, [
+    "cacheWriteTokens",
+    "cacheWrite",
+    "cacheWrites",
+    "cache_write_input_tokens",
+  ]);
+  const total =
+    pickClinePositiveNumber(raw, ["totalTokens", "total_tokens", "total"]) ??
+    (input || output || cacheRead || cacheWrite
+      ? (input ?? 0) + (output ?? 0) + (cacheRead ?? 0) + (cacheWrite ?? 0)
+      : undefined);
+  if (!input && !output && !cacheRead && !cacheWrite && !total) {
+    return undefined;
+  }
+  return { input, output, cacheRead, cacheWrite, total };
+}
+
+function parseClineJsonl(raw: string, backend: CliBackendConfig): CliOutput | null {
+  const lines = raw
+    .split(/\r?\n/g)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (lines.length === 0) {
+    return null;
+  }
+
+  let sawClineEvent = false;
+  let sessionId: string | undefined;
+  let usage: CliUsage | undefined;
+  let runResultText: string | undefined;
+  let completionText: string | undefined;
+  let agentText = "";
+  let sayText = "";
+
+  for (const line of lines) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!isRecord(parsed)) {
+      continue;
+    }
+
+    const type = typeof parsed.type === "string" ? parsed.type : "";
+    if (
+      type !== "task_started" &&
+      type !== "say" &&
+      type !== "agent_event" &&
+      type !== "run_result" &&
+      type !== "error"
+    ) {
+      continue;
+    }
+    sawClineEvent = true;
+
+    sessionId = sessionId ?? pickCliSessionId(parsed, backend);
+    if (!sessionId && typeof parsed.taskId === "string") {
+      sessionId = parsed.taskId.trim();
+    }
+
+    usage = readClineUsage(parsed) ?? usage;
+    if (isRecord(parsed.usage)) {
+      usage = readClineUsage(parsed.usage) ?? usage;
+    }
+    if (isRecord(parsed.aggregateUsage)) {
+      usage = readClineUsage(parsed.aggregateUsage) ?? usage;
+    }
+
+    if (type === "run_result") {
+      if (typeof parsed.text === "string") {
+        runResultText = parsed.text;
+      }
+      continue;
+    }
+
+    if (type === "say") {
+      const say = typeof parsed.say === "string" ? parsed.say : "";
+      if (say === "completion_result" && typeof parsed.text === "string") {
+        completionText = parsed.text;
+      } else if (say === "text" && parsed.partial !== true && typeof parsed.text === "string") {
+        sayText += parsed.text;
+      }
+      continue;
+    }
+
+    if (type === "agent_event" && isRecord(parsed.event)) {
+      const body = parsed.event;
+      const bodyType = typeof body.type === "string" ? body.type : "";
+      usage = readClineUsage(body) ?? usage;
+      if (isRecord(body.usage)) {
+        usage = readClineUsage(body.usage) ?? usage;
+      }
+      if (typeof body.text === "string") {
+        if (bodyType === "content_end") {
+          agentText = body.text;
+        } else if (
+          bodyType === "content_start" ||
+          bodyType === "content_delta" ||
+          bodyType === "text_delta"
+        ) {
+          agentText += body.text;
+        } else if (bodyType === "done") {
+          runResultText = body.text;
+        }
+      }
+    }
+  }
+
+  const text = (runResultText ?? completionText ?? (agentText || sayText)).trim();
+  if (!sawClineEvent || !text) {
+    return null;
+  }
+  return { text, sessionId, usage };
+}
+
 export function parseCliJsonl(
   raw: string,
   backend: CliBackendConfig,
   providerId: string,
 ): CliOutput | null {
+  const clineOutput = parseClineJsonl(raw, backend);
+  if (clineOutput) {
+    return clineOutput;
+  }
+
   const lines = normalizeStringEntries(raw.split(/\r?\n/g));
   if (lines.length === 0) {
     return null;

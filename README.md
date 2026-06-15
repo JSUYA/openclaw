@@ -1,5 +1,30 @@
 # 🦞 OpenClaw — Personal AI Assistant
 
+## Use your local Cline CLI
+
+This fork can use your already configured `cline` CLI as the local LLM provider.
+Select `cline-cli/default` in `~/.openclaw/openclaw.json`; OpenClaw will call
+`cline --json --yolo --act <prompt>` and let Cline use its own configured
+provider/model. ACP is not required.
+
+```json
+{
+  "gateway": { "mode": "local" },
+  "agents": {
+    "defaults": {
+      "model": { "primary": "cline-cli/default" },
+      "cliBackends": {
+        "cline-cli": { "command": "/home/jun/.local/bin/cline" }
+      }
+    }
+  }
+}
+```
+
+```bash
+openclaw agent --local --session-id cline-smoke --message "Reply exactly: OK."
+```
+
 <p align="center">
     <picture>
         <source media="(prefers-color-scheme: light)" srcset="https://raw.githubusercontent.com/openclaw/openclaw/main/docs/assets/openclaw-logo-text-dark.svg">

@@ -94,7 +94,19 @@ type FallbackCliBackendPolicy = {
   sideQuestionToolMode?: CliBackendSideQuestionToolMode;
 };
 
-const FALLBACK_CLI_BACKEND_POLICIES: Record<string, FallbackCliBackendPolicy> = {};
+const FALLBACK_CLI_BACKEND_POLICIES: Record<string, FallbackCliBackendPolicy> = {
+  "cline-cli": {
+    bundleMcp: false,
+    baseConfig: {
+      command: "cline",
+      args: ["--json", "--yolo", "--act"],
+      output: "jsonl",
+      input: "arg",
+      sessionMode: "none",
+      serialize: true,
+    },
+  },
+};
 
 function normalizeBundleMcpMode(
   mode: CliBundleMcpMode | undefined,
